@@ -2,7 +2,7 @@
 
 ## Primary VehiclePositions Table
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Trip Service Date | The service date of the trip departure (service date transitions at 4AM) | Date | `date(DATEPARSE("yyyyMMdd", [vehicle.trip.start_date]))`
 VehiclePositions Unique Daily Trip Identifier | Field to uniquely identify trip departures based on Trip Service Date and Trip ID | String | `str([Trip Service Date]) + " " + [vehicle.trip.trip_id]`
@@ -26,7 +26,7 @@ Trip Departure Rank per Terminal | Numerical order of the trip departure per ter
 
 ## Secondary VehiclePositions Table
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Next Trip Departure Rank per Terminal | Numerical order of the next trip departure per terminal | Number (whole) | `[Trip Departure Rank per Terminal]-1`
 Next Vehicle Consist | Vehicle assignment for the next trip departure | String | Rename `[Vehicle Consist]`
@@ -39,7 +39,7 @@ Next Departure Time | The time that the next trip departed | Date & Time | Renam
 
 ## Tertiary VehiclePositions Table
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Trip Departure Rank per Terminal After Next | Numerical order of the trip departure after next per terminal | Number (whole) | `[Trip Departure Rank per Terminal]-2`
 Vehicle Consist After Next | Vehicle assignment for the trip departure after next | String | Rename `[Vehicle Consist]`
@@ -51,7 +51,7 @@ Trip Service Date After Next | The service date of the trip departure after next
 
 ## Quaternary VehiclePositions Table
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Prior Trip Departure Rank per Terminal | Numerical order of the prior trip departure per terminal | Number (whole) | `[Trip Departure Rank per Terminal]+1`
 Prior Vehicle Consist | Vehicle assignment for the prior trip departure | String | Rename `[Vehicle Consist]`
@@ -62,26 +62,26 @@ Prior Trip Service Date | The service date of the prior trip departure | Date | 
 ---
 
 ## Union of all VehiclePositions tables
-- Do a union of all VehiclePositions tables
+- Perform a data union on all of the VehiclePositions tables
 
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Number of Cars | The total number of cars in a trip departure's vehicle consist | Number (whole) |  `{ FIXED [VehiclePositions Unique Daily Trip Identifier]: MAX(IF(LEN([Vehicle Consist])=4) THEN 1 ELSEIF (LEN([Vehicle Consist])=9) THEN 2 END)}` |
 Vehicle Consist Backwards | If there are 2 cars in a trip's vehicle consist then swap their order | String | `if([Number of Cars]=2) then (RIGHT(STR([Vehicle Consist]), 4) + "-" + LEFT(STR([Vehicle Consist]), 4)) else [Vehicle Consist] end`
 Gap to Next Terminal Departure | Gap in minutes between a trip departure and the following trip departure | Number (whole) | `{ FIXED [VehiclePositions Unique Daily Trip Identifier]: MAX(DATEDIFF('minute',[Departure Time],[Next Departure Time]))}`
+False Positive Departure? | Identify whether a trip is a false positive departure (...) | String | `IF([Number of Cars]=2 AND ([Vehicle Consist]=[Prior Vehicle Consist] OR [Vehicle Consist Backwards]=[Prior Vehicle Consist]) AND ([Vehicle Consist]!=[Next Vehicle Consist] OR [Vehicle Consist Backwards]!=[Next Vehicle Consist])) THEN "False Positive" ELSEIF([Number of Cars]=2 AND ([Vehicle Consist]!=[Prior Vehicle Consist] OR [Vehicle Consist Backwards]!=[Prior Vehicle Consist]) AND ([Vehicle Consist]=[Next Vehicle Consist] OR [Vehicle Consist Backwards]=[Next Vehicle Consist])) THEN "" ELSEIF ([Number of Cars]=1 AND ([Gap to Next Terminal Departure]<5 OR ISNULL([Gap to Next Terminal Departure]))) THEN  (IF (CONTAINS([Next Vehicle Consist],[Vehicle Consist]) OR CONTAINS([Vehicle Consist After Next],[Vehicle Consist]))  THEN "False Positive"  ELSE "" END) ELSE "" END`
 
 ---
 
 ## TripUpdate Table
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Prediction Service Date | Format `trip_update.trip.start_date` as a Date | Date | `date(DATEPARSE("yyyyMMdd", [trip_update.trip.start_date]))`
 TripUpdate Unique Daily Trip Identifier | Field to uniquely identify the trip departure based on trip service date and trip ID | String | `str([Prediction Service Date]) + " " + [trip_update.trip.trip_id]`
 TripUpdate Unique Prediction ID | Value to uniquely identify the prediction based on the generated prediction time, the predicted departure time, and trip ID | String | `str([TripUpdate feed_timestamp]) + " " + str([trip_update.stop_time_update.departure.time]) + " " + [trip_update.trip.trip_id]`
 ***Predictions After Departure Time | Check whether the time that a prediction was generated is after the trips departure time | Boolean | `IF (DATEDIFF('second',[TripUpdate feed_timestamp],[trip_update.stop_time_update.departure.time])) < 1 THEN TRUE ELSE FALSE END`
-False Positive Departure? | Identify whether a trip is a false positive departure (...) | String | `IF([Number of Cars]=2 AND ([Vehicle Consist]=[Prior Vehicle Consist] OR [Vehicle Consist Backwards]=[Prior Vehicle Consist]) AND ([Vehicle Consist]!=[Next Vehicle Consist] OR [Vehicle Consist Backwards]!=[Next Vehicle Consist])) THEN "False Positive" ELSEIF([Number of Cars]=2 AND ([Vehicle Consist]!=[Prior Vehicle Consist] OR [Vehicle Consist Backwards]!=[Prior Vehicle Consist]) AND ([Vehicle Consist]=[Next Vehicle Consist] OR [Vehicle Consist Backwards]=[Next Vehicle Consist])) THEN "" ELSEIF ([Number of Cars]=1 AND ([Gap to Next Terminal Departure]<5 OR ISNULL([Gap to Next Terminal Departure]))) THEN  (IF (CONTAINS([Next Vehicle Consist],[Vehicle Consist]) OR CONTAINS([Vehicle Consist After Next],[Vehicle Consist]))  THEN "False Positive"  ELSE "" END) ELSE "" END`
 ### Data Filters
 - `trip_update.trip.revenue`=TRUE
 - `trip_update.trip.schedule_relationship`!=CANCELED
@@ -94,7 +94,7 @@ False Positive Departure? | Identify whether a trip is a false positive departur
 ## Primary Joined Data Table
 - Join the VehiclePositions and TripUpdates tables on `VehiclePositions Unique Daily Trip Identifier`=`TripUpdate Unique Daily Trip Identifier`
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 ***Minutes Between Predicted and Actual Departure Time | Gap in minutes between the predicted departure time and the actual departure time | Number (whole) |  `DATEDIFF('minute',[Departure Time],[trip_update.stop_time_update.departure.time])` |
 ***Prediction Generated after Terminal Departure | --- | Number (whole) |  `IF (DATEDIFF('second',[TripUpdates feed_timestamp],[Next Departure Time]) <= 0) THEN TRUE ELSE FALSE END` |
@@ -103,9 +103,9 @@ Advance Notice (minutes) per Departure | Amount of time in minutes that the firs
 Time that Departure was First Predicted | The first time that a prediction was generated for a trip departure | String | `IF (ISNULL({ FIXED [VehiclePositions Unique Daily Trip Identifier]: MIN([TripUpdates feed_timestamp])})) THEN "No prediction was made" ELSE STR({ FIXED [VehiclePositions Unique Daily Trip Identifier]: MIN([TripUpdates feed_timestamp])}) END`
 Kind | Categorization for the departure uncertainity of the prediction | String | `IF ([trip_update.stop_time_update.departure.uncertainty]='60') then "Mid-trip" elseif ([trip_update.stop_time_update.departure.uncertainty]='120') then "At Terminal" elseif ([trip_update.stop_time_update.departure.uncertainty]='360') then "Reverse Trip" elseif (ISNULL([trip_update.stop_time_update.departure.uncertainty]) and ISNULL([Earliest Prediction Generated Time per Trip])) then "No Predictions" else str([trip_update.stop_time_update.departure.uncertainty]) end`
 Bin | Categorization for the amount of advance notice of the prediction in minutes | String | `IF([Advance Notice (minutes)]>=0 AND [Advance Notice (minutes)]<3) then "0-3 min" ELSEIF ([Advance Notice (minutes)]>=3 AND [Advance Notice (minutes)]<6) then "3-6 min" ELSEIF ([Advance Notice (minutes)]>=6 AND [Advance Notice (minutes)]<12) then "6-12 min" ELSEIF ([Advance Notice (minutes)]>=12 AND [Advance Notice (minutes)]<=30) then "12-30 min" elseif ([Advance Notice (minutes)]>30) then "30+ min" elseif ISNULL([Advance Notice (minutes)]) then "No Predictions" end`
-Actual - Predicted | The difference in seconds between the predicted departure time and the actual departure time | Number (whole) | `DATEDIFF('second',[Departure Time],[trip_update.stop_time_update.departure.time])`
-Mean Error | Mean error of the difference in seconds between the predicted departure time and the actual departure time | Number (decimal) | `AVG([Actual - Predicted])`
-Root Mean Squared Error | Root mean squared error of the difference in seconds between the predicted departure time and the actual departure time | Number (decimal) | `SQRT(AVG(SQUARE([Actual - Predicted])))`
+Actual - Predicted | The amount of time in seconds between the predicted departure time and the actual departure time | Number (whole) | `DATEDIFF('second',[Departure Time],[trip_update.stop_time_update.departure.time])`
+Mean Error | Mean error of the amount of time in seconds between the predicted departure time and the actual departure time | Number (decimal) | `AVG([Actual - Predicted])`
+Root Mean Squared Error | Root mean squared error of the amount of time in seconds between the predicted departure time and the actual departure time | Number (decimal) | `SQRT(AVG(SQUARE([Actual - Predicted])))`
 Is Accurate? | Identify whether a prediction is accurate based on the IBI/Denver Methodology | String | `IF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="0-3 min") THEN (IF([Actual - Predicted]>=-60 AND [Actual - Predicted]<=60) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="3-6 min") THEN (IF([Actual - Predicted]>=-90 AND [Actual - Predicted]<=120) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="6-12 min") THEN (IF([Actual - Predicted]>=-150 AND [Actual - Predicted]<=210) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="12-30 min") THEN (IF([Actual - Predicted]>=-240 AND [Actual - Predicted]<=360) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="30+ min") THEN (IF([Actual - Predicted]>=-240 AND [Actual - Predicted]<=360) THEN "Accurate" ELSE "Inaccurate" END) end`
 Prediction Available for Departure? | Identify whether a trip departure has any associated predictions | Boolean | `IF(ISNULL([TripUpdate Unique Daily Trip Identifier]) AND NOT ISNULL([VehiclePositions Unique Daily Trip Identifier])) THEN FALSE ELSE TRUE END`
 Continuous? | Identify whether a trip departure has continuous prediction coverage (...) | Boolean | ...
@@ -125,7 +125,7 @@ Prediction Rank per Departure | Numerical order of the prediction per trip depar
 
 ## Secondary Joined Data Table
 ### Custom Calculations
-Field | Description | Field Type | Query |
+Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Next Prediction Rank per Departure | Numerical order of the next prediction per trip departure | Number (whole) | `[Prediction Rank per Departure]-1`
 Next Prediction Generated Time | The time that the next trip prediction was generated | Date & Time | Rename `[TripUpdate feed_timestamp]`
