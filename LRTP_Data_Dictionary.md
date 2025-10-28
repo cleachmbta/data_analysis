@@ -103,7 +103,7 @@ Next TripUpdate Unique Daily Trip Identifier | Value to uniquely identify the ne
 
 ---
 
-## Primary Joined Data Table
+## Joined Data Table
 - Join the VehiclePositions and TripUpdates tables on `VehiclePositions Unique Daily Trip Identifier`=`TripUpdate Unique Daily Trip Identifier`
 ### Custom Calculations
 Field Name | Description | Type | Query |
@@ -128,8 +128,23 @@ Prediction Available for Departure? | Identify whether a trip departure has any 
 % Departures with Continuous Coverage | Percentage of departures with continuous prediction coverage out of the total number of departures | Number (decimal) | `[# Departures with Continuous Coverage]/[# Departures]`
 Next Prediction Generated Time or Departure Time | For the last prediction generated for a departure get the trip departure time, otherwise get the next time that a prediction was generated for the departure | Date & Time | `IF(ISNULL([Next Prediction Generated Time])) THEN [Departure Time] else [Next Prediction Generated Time] end`
 Gap to Next Prediction | The amount of time in seconds between the time that the prediction was generated and the next time that a prediction was generated for a trip departure. If its the last prediction generated for a departure, get the amount of time in seconds between the time that the prediction was generated and the trip departure time | Number (whole) | `zn(DATEDIFF('second', [TripUpdates feed_timestamp],[Next Prediction Generated Time or Departure Time]))`
-Continuous? | Identify whether a trip departure has continuous prediction coverage (...) | Boolean | ...
+Continuous Prediction with Min. Advance Notice | ... | Number (whole) | `IF([Gap to Next Prediction]>20 and [Advance Notice (minutes)]<=[Min. Advance Notice (minutes)]) THEN 1 ELSEIF([Gap to Next Prediction]<=20 and [Advance Notice (minutes)]<=[Min. Advance Notice (minutes)]) THEN 0 ELSEIF ([Advance Notice (minutes)]>[Min. Advance Notice (minutes)]) THEN NULL END`
+Prediction Gaps with Min. Advance Notice? | ... | Boolean | `(IF(({ FIXED [VehiclePositions Unique Daily Trip Identifier]: SUM([Continuous Prediction with Min. Advance Notice])})=0) THEN FALSE ELSE TRUE END)`
+Departure Advance Notice >= Min. Advance Notice | ... | Boolean | `IF([Advance Notice (minutes) per Departure]>=[Min. Advance Notice (minutes)]) THEN TRUE ELSE FALSE END`
+Departure Advance Notice <= Min. Advance Notice Min Time | ... | Boolean | `{FIXED [VehiclePositions Unique Daily Trip Identifier]: MIN(IF [Advance Notice (minutes)]<=[Min. Advance Notice (minutes)] THEN [Prediction Generated Time] END)}`
+Departure Advance Notice > Min. Advance Notice Max Time | ... | Boolean | `{FIXED [VehiclePositions Unique Daily Trip Identifier]:  MAX(IF [Advance Notice (minutes)]>[Min. Advance Notice (minutes)] THEN [Prediction Generated Time] END)}`
+Continuous Coverage Between Advance Notice > Min. Advance Notice and Advance Notice <= Min. Advance Notice Predictions | ... | Boolean | `IF ((DATEDIFF('second',[Departure Advance Notice > Min. Advance Notice Max Time],[Departure Advance Notice <= Min. Advance Notice Min Time]))>20) THEN FALSE ELSE TRUE END`
+Continuous? | Identify whether a trip departure has continuous prediction coverage (...) | Boolean | `IF([Departure Advance Notice >= Min. Advance Notice]=TRUE AND [Continuous Coverage Between Advance Notice > Min. Advance Notice and Advance Notice <= Min. Advance Notice Predictions]=FALSE) THEN FALSE ELSEIF([Departure Advance Notice >= Min. Advance Notice]=TRUE AND [Continuous Coverage Between Advance Notice > Min. Advance Notice and Advance Notice <= Min. Advance Notice Predictions]=TRUE AND [Prediction Gaps with Min. Advance Notice?]=FALSE) THEN TRUE ELSEIF([Departure Advance Notice >= Min. Advance Notice]=TRUE AND [Continuous Coverage Between Advance Notice > Min. Advance Notice and Advance Notice <= Min. Advance Notice Predictions]=TRUE AND [Prediction Gaps with Min. Advance Notice?]=TRUE) THEN FALSE ELSEIF([Departure Advance Notice >= Min. Advance Notice]=FALSE) THEN FALSE END`
 
 ### Data Filters
 `Prediction Generated after Terminal Departure`=FALSE
 
+### Parameters
+Field Name | Description | Type | Query |
+--- | --- | --- |  --- |
+Min. Advance Notice (minutes) | ... |  Number (whole) | 0
+Configure Continuous Coverage based on Min. Advance Notice | ... | Boolean |  FALSE |
+Single or Multi-Day? | Allows the user the configure whether the report data should be for single service date or span multiple days | String | Single Day
+Single Day Service Date Parameter | If Single Day is selected, allows the user to set which service date the report should look at | Date | `[Latest Data Date`
+Multi-Day Start Service Date Parameter | If Multi-Day is selected, allows the user to set which day the report service date range should start with | Date | `[2 Weeks Ago from Latest Data Date`
+Multi-Day End Service Date Parameter | If Multi-Day is selected, allows the user to set which day the report service date range should end with | Date | `[Latest Data Date`
