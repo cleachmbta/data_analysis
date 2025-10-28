@@ -5,6 +5,8 @@
 Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Trip Service Date | The service date of the trip departure (service date transitions at 4AM) | Date | `date(DATEPARSE("yyyyMMdd", [vehicle.trip.start_date]))`
+Latest Data Date | The day that the data has most recently been updated | Date | `{MAX([Trip Service Date])}`
+2 Weeks Ago from Latest Data Date | Two weeks before the day that the data has most recently been updated | Date | `{MAX([Trip Service Date])-15}`
 VehiclePositions Unique Daily Trip Identifier | Field to uniquely identify trip departures based on Trip Service Date and Trip ID | String | `str([Trip Service Date]) + " " + [vehicle.trip.trip_id]`
 Departure Time | The time that the trip departed (the first time that the vehicle starts moving towards the following station) | Date & Time | `{ FIXED [VehiclePositions Unique Daily Trip Identifier]: MIN([VehiclePositions feed_timestamp] END)}`
 Departure Stop ID | The stop ID of the station that the trip is departing to | String | `{fixed [VehiclePositions Unique Daily Trip Identifier]: min(if [VehiclePositions feed_timestamp] = [Departure Time] then [vehicle.stop_id] END )}`
@@ -140,11 +142,11 @@ Continuous? | Identify whether a trip departure has continuous prediction covera
 `Prediction Generated after Terminal Departure`=FALSE
 
 ### Parameters
-Field Name | Description | Type | Query |
+Field Name | Description | Type | Default Value |
 --- | --- | --- |  --- |
 Min. Advance Notice (minutes) | ... |  Number (whole) | 0
 Configure Continuous Coverage based on Min. Advance Notice | ... | Boolean |  FALSE |
 Single or Multi-Day? | Allows the user the configure whether the report data should be for single service date or span multiple days | String | Single Day
-Single Day Service Date Parameter | If Single Day is selected, allows the user to set which service date the report should look at | Date | `[Latest Data Date`
-Multi-Day Start Service Date Parameter | If Multi-Day is selected, allows the user to set which day the report service date range should start with | Date | `[2 Weeks Ago from Latest Data Date`
-Multi-Day End Service Date Parameter | If Multi-Day is selected, allows the user to set which day the report service date range should end with | Date | `[Latest Data Date`
+Single Day Service Date Parameter | If Single Day is selected, allows the user to set which service date the report should look at | Date | `[Latest Data Date]`
+Multi-Day Start Service Date Parameter | If Multi-Day is selected, allows the user to set which day the report service date range should start with | Date | `[2 Weeks Ago from Latest Data Date]`
+Multi-Day End Service Date Parameter | If Multi-Day is selected, allows the user to set which day the report service date range should end with | Date | `[Latest Data Date]`
