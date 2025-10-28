@@ -12,6 +12,10 @@ Route | ... | String | `{fixed [VehiclePositions Unique Daily Trip Identifier]: 
 Vehicle Consist | ... | String | `{fixed [VehiclePositions Unique Daily Trip Identifier]: min(if [VehiclePositions feed_timestamp] = [Departure Time] then [vehicle.vehicle.label] END )}`
 Trip Terminal | ... | String | `CASE [Departure Stop ID] WHEN "70502" THEN "Union Square" WHEN "70510" THEN "Medford/Tufts" WHEN "70110" THEN "Boston College" WHEN "70236" THEN "Cleveland Circle" WHEN "70162" THEN "Riverside" WHEN "70274" THEN "Mattapan" END`
 Trip Departure Rank per Terminal | ... | Number (whole) | `{PARTITION [VehiclePositions Unique Daily Trip Identifier]: {ORDERBY [Departure Time] ASC,[vehicle.trip.trip_id] ASC: RANK_DENSE() }}` |
+Day of Week | ... | String | `DATENAME('weekday', [Trip Service Date])`
+Hour | ... | String | `IF (DATEPART('hour',[Departure Time]))=0 THEN '12AM' ELSEIF (DATEPART('hour',[Departure Time]))=12 THEN '12PM' ELSEIF (DATEPART('hour',[Departure Time]))>12 THEN STR((DATEPART('hour',[Departure Time]))-12) + 'PM' ELSE STR((DATEPART('hour',[Departure Time]))) + 'AM' END`
+
+
 ### Data Filters
 - `vehicle.trip.revenue`=TRUE
 - `vehicle.trip.trip_id`!=NULL
@@ -72,7 +76,7 @@ Field | Description | Field Type | Query |
 --- | --- | --- |  --- |
 Prediction Service Date | Format `trip_update.trip.start_date` as a Date | Date | `date(DATEPARSE("yyyyMMdd", [trip_update.trip.start_date]))`
 TripUpdate Unique Daily Trip Identifier | Field to uniquely identify trip departures based on trip service date and trip ID | String | `str([Prediction Service Date]) + " " + [trip_update.trip.trip_id]`
-TripUpdate Unique Prediction ID | Field to uniquely identify predictions based on the generated prediction time, the ![Uploading image.png…](), and trip ID | String | `str([TripUpdate feed_timestamp]) + " " + str([trip_update.stop_time_update.departure.time]) + " " + [trip_update.trip.trip_id]`
+TripUpdate Unique Prediction ID | Field to uniquely identify predictions based on the generated prediction time, the predicted departure time, and trip ID | String | `str([TripUpdate feed_timestamp]) + " " + str([trip_update.stop_time_update.departure.time]) + " " + [trip_update.trip.trip_id]`
 Predictions After Departure Time | ... | Boolean | `IF (DATEDIFF('second',[TripUpdate feed_timestamp],[trip_update.stop_time_update.departure.time])) < 1 THEN TRUE ELSE FALSE END`
 False Positive Departure? | ... | String | `IF([Number of Cars]=2 AND ([Vehicle Consist]=[Prior Vehicle Consist] OR [Vehicle Consist Backwards]=[Prior Vehicle Consist]) AND ([Vehicle Consist]!=[Next Vehicle Consist] OR [Vehicle Consist Backwards]!=[Next Vehicle Consist])) THEN "False Positive" ELSEIF([Number of Cars]=2 AND ([Vehicle Consist]!=[Prior Vehicle Consist] OR [Vehicle Consist Backwards]!=[Prior Vehicle Consist]) AND ([Vehicle Consist]=[Next Vehicle Consist] OR [Vehicle Consist Backwards]=[Next Vehicle Consist])) THEN "" ELSEIF ([Number of Cars]=1 AND ([Gap to Next Terminal Departure]<5 OR ISNULL([Gap to Next Terminal Departure]))) THEN  (IF (CONTAINS([Next Vehicle Consist],[Vehicle Consist]) OR CONTAINS([Vehicle Consist After Next],[Vehicle Consist]))  THEN "False Positive"  ELSE "" END) ELSE "" END`
 ### Data Filters
@@ -90,8 +94,19 @@ False Positive Departure? | ... | String | `IF([Number of Cars]=2 AND ([Vehicle 
 Field | Description | Field Type | Query |
 --- | --- | --- |  --- |
 Minutes Between Predicted and Actual Departure Time | --- | Number (whole) |  `DATEDIFF('minute',[Next Departure Time],[trip_update.stop_time_update.departure.time])` |
-Prediction Generated after Terminal Departure | --- | Number (whole) |  `IF (DATEDIFF('second',[TripUpdate feed_timestamp],[Next Departure Time]) <= 0) THEN TRUE ELSE FALSE END` |
-Prediction Rank per Departure | ... | Number (whole) | `{PARTITION [VehiclePositions Unique Daily Trip Identifier]: {ORDERBY [TripUpdate feed_timestamp] ASC: RANK_DENSE() }}`
+Prediction Generated after Terminal Departure | --- | Number (whole) |  `IF (DATEDIFF('second',[TripUpdates feed_timestamp],[Next Departure Time]) <= 0) THEN TRUE ELSE FALSE END` |
+Prediction Rank per Departure | ... | Number (whole) | `{PARTITION [VehiclePositions Unique Daily Trip Identifier]: {ORDERBY [TripUpdates feed_timestamp] ASC: RANK_DENSE() }}`
+Advance Notice (minutes) | ... | Number (whole) | `DATEDIFF('minute',[TripUpdates feed_timestamp],[Departure Time])`
+Kind | ... | String | `IF ([trip_update.stop_time_update.departure.uncertainty]='60') then "Mid-trip" elseif ([trip_update.stop_time_update.departure.uncertainty]='120') then "At Terminal" elseif ([trip_update.stop_time_update.departure.uncertainty]='360') then "Reverse Trip" elseif (ISNULL([trip_update.stop_time_update.departure.uncertainty]) and ISNULL([Earliest Prediction Generated Time per Trip])) then "No Predictions" else str([trip_update.stop_time_update.departure.uncertainty]) end`
+Bin | ... | String | `IF([Advance Notice (minutes)]>=0 AND [Advance Notice (minutes)]<3) then "0-3 min" ELSEIF ([Advance Notice (minutes)]>=3 AND [Advance Notice (minutes)]<6) then "3-6 min" ELSEIF ([Advance Notice (minutes)]>=6 AND [Advance Notice (minutes)]<12) then "6-12 min" ELSEIF ([Advance Notice (minutes)]>=12 AND [Advance Notice (minutes)]<=30) then "12-30 min" elseif ([Advance Notice (minutes)]>30) then "30+ min" elseif ISNULL([Advance Notice (minutes)]) then "No Predictions" end`
+Actual - Predicted | ... | Number (whole) | `DATEDIFF('second',[Departure Time],[trip_update.stop_time_update.departure.time])`
+Mean Error | ... | Number (decimal) | `AVG([Actual - Predicted])`
+Root Mean Squared Error | ... | Number (decimal) | `SQRT(AVG(SQUARE([Actual - Predicted])))`
+Is Accurate? | ... | String | `IF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="0-3 min") THEN (IF([Actual - Predicted]>=-60 AND [Actual - Predicted]<=60) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="3-6 min") THEN (IF([Actual - Predicted]>=-90 AND [Actual - Predicted]<=120) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="6-12 min") THEN (IF([Actual - Predicted]>=-150 AND [Actual - Predicted]<=210) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="12-30 min") THEN (IF([Actual - Predicted]>=-240 AND [Actual - Predicted]<=360) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="30+ min") THEN (IF([Actual - Predicted]>=-240 AND [Actual - Predicted]<=360) THEN "Accurate" ELSE "Inaccurate" END) end`
+'# Predictions' | ... | Number (whole) | `COUNTD([TripUpdate Unique Prediction ID])`
+'# Accurate Predictions' | ... | Number (whole) | `ZN((COUNTD(IF([Is Accurate?]="Accurate") THEN ([TripUpdate Unique Prediction ID]) end)))`
+% Accuracy | ... | Whole (decimal) | `[# Accurate Predictions]/[# Predictions]`
+
 ### Data Filters
 `Prediction Generated after Terminal Departure`=FALSE
 
