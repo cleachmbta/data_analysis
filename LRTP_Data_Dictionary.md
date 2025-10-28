@@ -74,19 +74,32 @@ False Positive Departure? | Identify whether a trip is a false positive departur
 
 ---
 
-## TripUpdate Table
+## Primary TripUpdates Table
 ### Custom Calculations
 Field Name | Description | Type | Query |
 --- | --- | --- |  --- |
 Prediction Service Date | Format `trip_update.trip.start_date` as a Date | Date | `date(DATEPARSE("yyyyMMdd", [trip_update.trip.start_date]))`
 TripUpdate Unique Daily Trip Identifier | Field to uniquely identify the trip departure based on trip service date and trip ID | String | `str([Prediction Service Date]) + " " + [trip_update.trip.trip_id]`
 TripUpdate Unique Prediction ID | Value to uniquely identify the prediction based on the generated prediction time, the predicted departure time, and trip ID | String | `str([TripUpdate feed_timestamp]) + " " + str([trip_update.stop_time_update.departure.time]) + " " + [trip_update.trip.trip_id]`
+Prediction Rank per Departure | Numerical order of the prediction per trip departure | Number (whole) | `{PARTITION [TripUpdate Unique Daily Trip Identifier]: {ORDERBY [TripUpdates feed_timestamp] ASC: RANK_DENSE() }}`
+
 ### Data Filters
 - `trip_update.trip.revenue`=TRUE
 - `trip_update.trip.schedule_relationship`!=CANCELED
 - `trip_update.stop_time_update.schedule_relationship`!=SKIPPED
 - `trip_update.stop_time_update.departure.time`!=NULL
 - `Predictions After Departure Time`=FALSE
+
+---
+
+## Secondary TripUpdates Table
+### Custom Calculations
+Field Name | Description | Type | Query |
+--- | --- | --- |  --- |
+Next Prediction Rank per Departure | Numerical order of the next prediction per trip departure | Number (whole) | `[Prediction Rank per Departure]-1`
+Next Prediction Generated Time | The time that the next trip prediction was generated | Date & Time | Rename `[TripUpdate feed_timestamp]`
+Next TripUpdate Unique Daily Trip Identifier | Value to uniquely identify the next prediction based on the generated prediction time, the predicted departure time, and trip ID | String | Rename `[TripUpdate Unique Daily Trip Identifier]`
+- Full outer join the primary joined data table and secondary joined data tables on `Prediction Rank per Departure`=`Next Prediction Rank per Departure` and `TripUpdate Unique Daily Trip Identifier`=`Next TripUpdate Unique Daily Trip Identifier`
 
 ---
 
@@ -106,7 +119,6 @@ Mean Error | Mean error of the amount of time in seconds between the predicted d
 Root Mean Squared Error | Root mean squared error of the amount of time in seconds between the predicted departure time and the actual departure time | Number (decimal) | `SQRT(AVG(SQUARE([Actual - Predicted])))`
 Is Accurate? | Identify whether a prediction is accurate based on the IBI/Denver Methodology | String | `IF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="0-3 min") THEN (IF([Actual - Predicted]>=-60 AND [Actual - Predicted]<=60) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="3-6 min") THEN (IF([Actual - Predicted]>=-90 AND [Actual - Predicted]<=120) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="6-12 min") THEN (IF([Actual - Predicted]>=-150 AND [Actual - Predicted]<=210) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="12-30 min") THEN (IF([Actual - Predicted]>=-240 AND [Actual - Predicted]<=360) THEN "Accurate" ELSE "Inaccurate" END) ELSEIF([TripUpdate Unique Daily Trip Identifier]=[VehiclePositions Unique Daily Trip Identifier] and [Bin]="30+ min") THEN (IF([Actual - Predicted]>=-240 AND [Actual - Predicted]<=360) THEN "Accurate" ELSE "Inaccurate" END) end`
 Prediction Available for Departure? | Identify whether a trip departure has any associated predictions | Boolean | `IF(ISNULL([TripUpdate Unique Daily Trip Identifier]) AND NOT ISNULL([VehiclePositions Unique Daily Trip Identifier])) THEN FALSE ELSE TRUE END`
-Continuous? | Identify whether a trip departure has continuous prediction coverage (...) | Boolean | ...
 \# Predictions | The total number of terminal predictions generated whose predicted terminal departure time matched to its corresponding actual departure time based on the trip service date and trip ID | Number (whole) | `COUNTD([TripUpdate Unique Prediction ID])`
 \# Accurate Predictions | The number of terminal predictions generated whose predicted terminal departure time matched to its corresponding actual departure time based on the trip service date and trip ID, and passes the accuracy standard based on the IBI/Denver Methodology | Number (whole) | `ZN((COUNTD(IF([Is Accurate?]="Accurate") THEN ([TripUpdate Unique Prediction ID]) end)))`
 % Accuracy | Percentage of accurate predictions out of the total number predictions generated | Whole (decimal) | `[# Accurate Predictions]/[# Predictions]`
@@ -114,19 +126,10 @@ Continuous? | Identify whether a trip departure has continuous prediction covera
 \# Predicted Departures | The total number of terminal departures that had a predicted terminal departure time matching to its corresponding actual departure time based on trip service date and trip ID. | Number (whole) | `IFNULL(countd(IF([Prediction Available for Departure?]=TRUE) THEN ([VehiclePositions Unique Daily Trip Identifier]) end),0)`
 \# Departures with Continuous Coverage | The total number of terminal departures with continuous prediction coverage | Number (whole) | `ZN((COUNTD(IF([Continuous?]=TRUE) THEN ([VehiclePositions Unique Daily Trip Identifier]) end)))`
 % Departures with Continuous Coverage | Percentage of departures with continuous prediction coverage out of the total number of departures | Number (decimal) | `[# Departures with Continuous Coverage]/[# Departures]`
-Prediction Rank per Departure | Numerical order of the prediction per trip departure | Number (whole) | `{PARTITION [VehiclePositions Unique Daily Trip Identifier]: {ORDERBY [TripUpdates feed_timestamp] ASC: RANK_DENSE() }}`
+Next Prediction Generated Time or Departure Time | For the last prediction generated for a departure get the trip departure time, otherwise get the next time that a prediction was generated for the departure | Date & Time | `IF(ISNULL([Next Prediction Generated Time])) THEN [Departure Time] else [Next Prediction Generated Time] end`
+Gap to Next Prediction | The amount of time in seconds between the time that the prediction was generated and the next time that a prediction was generated for a trip departure. If its the last prediction generated for a departure, get the amount of time in seconds between the time that the prediction was generated and the trip departure time | Number (whole) | `zn(DATEDIFF('second', [TripUpdates feed_timestamp],[Next Prediction Generated Time or Departure Time]))`
+Continuous? | Identify whether a trip departure has continuous prediction coverage (...) | Boolean | ...
 
 ### Data Filters
 `Prediction Generated after Terminal Departure`=FALSE
-
----
-
-## Secondary Joined Data Table
-### Custom Calculations
-Field Name | Description | Type | Query |
---- | --- | --- |  --- |
-Next Prediction Rank per Departure | Numerical order of the next prediction per trip departure | Number (whole) | `[Prediction Rank per Departure]-1`
-Next Prediction Generated Time | The time that the next trip prediction was generated | Date & Time | Rename `[TripUpdate feed_timestamp]`
-Next TripUpdate Unique Daily Trip Identifier | Value to uniquely identify the next prediction based on the generated prediction time, the predicted departure time, and trip ID | String | Rename `[TripUpdate Unique Daily Trip Identifier]`
-- Full outer join the primary joined data table and secondary joined data tables on `Prediction Rank per Departure`=`Next Prediction Rank per Departure` and `VehiclePositions Unique Daily Trip Identifier`=`Next TripUpdate Unique Daily Trip Identifier`
 
